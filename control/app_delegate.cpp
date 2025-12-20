@@ -2,10 +2,11 @@
 #include "app_delegate.h"
 AppDelegate::~AppDelegate()
 {
+    delete viewDelegate;
     mtkView->release();
     window->release();
     device->release();
-    delete viewDelegate;
+    
 }
 
 void AppDelegate::applicationWillFinishLaunching(NS::Notification* notification)
@@ -16,6 +17,7 @@ void AppDelegate::applicationWillFinishLaunching(NS::Notification* notification)
 
 void AppDelegate::applicationDidFinishLaunching(NS::Notification* notification)
 {
+    //{x,y}, {width, height} of window frame
     CGRect frame = (CGRect){ {100.0, 100.0}, {640.0, 480.0} };
 
     window = NS::Window::alloc()->init(
