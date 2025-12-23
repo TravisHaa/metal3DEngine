@@ -1,29 +1,40 @@
 
 
 #include "renderer.h"
+#include "mesh_factory.h"
 
 Renderer::Renderer(MTL::Device* device):
 device(device->retain())
 {
     //job of GPU to create command queue
     commandQueue = device->newCommandQueue();
-    buildPipeline();
+    buildShaders();
+    buildMeshes();
 }
 //any metal obj is manually managed
 Renderer::~Renderer() {
+    triangleMesh->release();
+    trianglePipeline->release();
+    generalPipeline->release();
     commandQueue->release();
     device->release();
 }
 
-void Renderer::buildPipeline() {
+void Renderer::buildMeshes() {
+    triangleMesh = MeshFactory::build_triangle(device);
+}
+
+void Renderer::buildShaders() {
+    trianglePipeline = buildShader("shaders/triangle.metal", "vertexMain", "fragmentMain");
+    generalPipeline = buildShader("shaders/general.metal", "vertexMainGeneral", "fragmentMainGeneral");
+}
+
+MTL::RenderPipelineState* Renderer::buildShader(
+    const char* filename, const char* vertName, const char* fragName) {
     std::cout << "--- Reading File ---" << std::endl;
     
     std::ifstream file;
-    file.open("shaders/triangle.metal");
-    if (!file.is_open()) {
-        std::cout << "FAILED TO OPEN FILE\n";
-        return;
-    }
+    file.open(filename);
     std::stringstream reader;
     reader << file.rdbuf();
     std::string raw_str = reader.str();
@@ -40,21 +51,22 @@ void Renderer::buildPipeline() {
     }
     
 //need to manually free these, specify name of function and fetch it from lib
-    NS::String* vertexName = NS::String::string("vertexMain", NS::StringEncoding::UTF8StringEncoding);
+    NS::String* vertexName = NS::String::string(vertName, NS::StringEncoding::UTF8StringEncoding);
     MTL::Function* vertexMain = lib->newFunction(vertexName);
     
-    NS::String* fragmentName = NS::String::string("fragmentMain", NS::StringEncoding::UTF8StringEncoding);
+    //vertex determine actual point, while fragment determiens all other attibutes: color, etc
+    NS::String* fragmentName = NS::String::string(fragName , NS::StringEncoding::UTF8StringEncoding);
     MTL::Function* fragmentMain = lib->newFunction(fragmentName);
     
-    //need to make render pipeline descriptor
+    //need to make render pipeline descriptor - recipe for how GPU should render
     MTL::RenderPipelineDescriptor* descriptor = MTL::RenderPipelineDescriptor::alloc()->init();
     descriptor->setVertexFunction(vertexMain);
     descriptor->setFragmentFunction(fragmentMain);
     descriptor->colorAttachments()->object(0)->setPixelFormat(MTL::PixelFormat::PixelFormatBGRA8Unorm_sRGB);
     
     //building our actual triangle render pipeline
-    trianglePipeline = device->newRenderPipelineState(descriptor, &error);
-    if(!trianglePipeline) {
+    MTL::RenderPipelineState* pipeline = device->newRenderPipelineState(descriptor, &error);
+    if(!pipeline) {
         std::cout << error->localizedDescription()->utf8String() << std::endl;
     }
     
@@ -62,6 +74,9 @@ void Renderer::buildPipeline() {
     vertexMain->release();
     fragmentMain->release();
     lib->release();
+    file.close();
+    
+    return pipeline;
 }
 
 void Renderer::draw(MTK::View* view) {
@@ -77,6 +92,7 @@ void Renderer::draw(MTK::View* view) {
     
     //set pipeline state, and use shader
     encoder->setRenderPipelineState(trianglePipeline);
+    encoder->setVertexBuffer(triangleMesh, 0, 0 );
     
     //defines vertex IDs 0-3 , MTL primitive triangle takes 3 points and fills its interior in
     encoder->drawPrimitives(
